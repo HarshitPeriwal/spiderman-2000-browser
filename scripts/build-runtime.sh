@@ -96,6 +96,15 @@ fi
 
 # --- Site ------------------------------------------------------------------
 cp -r "$ROOT/site/." "$OUT/"
+
+# Gamepad bridge (site/gamepad.js) on every runtime page.
+for target in $TARGETS; do
+    page="$OUT/runtime/${SITE_DIR[$target]}/boxedwine.html"
+    if ! grep -q 'gamepad.js' "$page"; then
+        sed -i 's#</body>#<script src="../../gamepad.js"></script></body>#' "$page"
+    fi
+    grep -q 'gamepad.js' "$page" || { echo "error: could not inject gamepad.js into $page" >&2; exit 1; }
+done
 cp "$ROOT/LICENSES.md" "$OUT/LICENSES.md"
 cat > "$OUT/build-info.json" <<EOF
 {

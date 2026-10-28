@@ -226,6 +226,18 @@ async function makeCopy() {
 function markCopyReady() {
   copyReady = true;
   $("launch").disabled = false;
+  try { localStorage.setItem("spidey.copyReady", "1"); } catch {}
+}
+
+// Returning players: the copy already exists on disk and Boxedwine remembers
+// the mounted folder, so steps 1 and 2 can be skipped.
+function restoreCopyReady() {
+  let ready = false;
+  try { ready = localStorage.getItem("spidey.copyReady") === "1"; } catch {}
+  if (ready) {
+    markCopyReady();
+    setStatus($("copy-status"), "Browser copy already made on an earlier visit. Go straight to step 3.", "ok");
+  }
 }
 
 // --- Launch ----------------------------------------------------------------
@@ -256,6 +268,7 @@ $(canIsolate ? "rt-mt" : "rt-st").checked = true;
 $("rt-mt").disabled = !canIsolate;
 for (const r of document.querySelectorAll('input[name="runtime"]')) r.addEventListener("change", updateLaunchUrl);
 updateLaunchUrl();
+restoreCopyReady();
 
 $("pick-source").addEventListener("click", pickSource);
 $("make-copy").addEventListener("click", makeCopy);

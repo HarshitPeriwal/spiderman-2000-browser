@@ -134,5 +134,36 @@ combat, cutscenes and save/load.
 - **Memory:** the host-folder mount loads the whole game folder (about 457 MB)
   into WASM memory, out of a 3 GB maximum.
 - **Browser support:** Chromium only (File System Access API).
-- **Input:** the game uses DirectInput8 through Wine. Gamepad support depends
-  on Boxedwine's browser joystick bridge and hasn't been checked.
+- **Controllers:** Boxedwine doesn't pass browser gamepads to Wine, so the
+  game's own DirectInput joystick path is unused. `site/gamepad.js` presses the
+  game's default keyboard keys instead (table below). This matches the
+  original's own controller handling, which reduces the stick to digital
+  directions at 250/1000 (`PCINPUT_GetControllerDirections` in spidey-decomp).
+  Differences from native joystick play: the in-game "change button
+  configuration" screen won't see the pad, and if you change the *keyboard*
+  configuration in the game you must update the bridge mapping
+  (`localStorage["spidey.padmap"]`) to match. Untested with real hardware.
+
+## Controls
+
+Keyboard: the game's own defaults (arrows, numpad 2/4/6/8/7/9/3, Enter, Tab).
+Change them in the game's options as on PC.
+
+Controller (any pad with the browser's standard mapping), by position:
+
+| Pad (Xbox / PlayStation) | Sends | Game default action slot |
+|---|---|---|
+| Left stick, d-pad | Arrow keys | Directions |
+| A / Cross (bottom) | Numpad 2 | action `0x10` |
+| B / Circle (right) | Numpad 6 | action `0x20` |
+| X / Square (left) | Numpad 4 | action `0x40` |
+| Y / Triangle (top) | Numpad 8 | action `0x80` |
+| LB / L1 | Numpad 7 | action `0x100` |
+| RB / R1 | Numpad 9 | action `0x400` |
+| RT / R2 | Numpad 3 | action `0x200` |
+| Start | Enter | action `0x1000` |
+| Back / Select | Tab | action `0x2000` |
+
+Action slots come from the exe's default mapping table. Their names (jump,
+punch, kick, web and so on) are shown in the game's keyboard configuration
+screen. Mapping slot numbers to names from the code is still an open item.
