@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spider-Man 2000 Launcher</title>
+<meta name="description" content="Runs your own copy of the Windows PC release of Spider-Man (2000) in the browser, unmodified, through Boxedwine.">
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1b1b1f; --muted: #5d5d66;
+    --line: #dddad3; --accent: #b3122b; --accent-ink: #ffffff;
+    --ok: #1d7a3e; --warn: #9a5b00; --bad: #b3122b; --code: #efede8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121215; --panel: #1b1b20; --ink: #ececf0; --muted: #a2a2ad;
+      --line: #2d2d35; --accent: #e0384f; --accent-ink: #ffffff;
+      --ok: #4cc27a; --warn: #e3a64a; --bad: #ff6b7d; --code: #24242b;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121215; --panel: #1b1b20; --ink: #ececf0; --muted: #a2a2ad;
+    --line: #2d2d35; --accent: #e0384f; --accent-ink: #ffffff;
+    --ok: #4cc27a; --warn: #e3a64a; --bad: #ff6b7d; --code: #24242b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--muted); margin: 0 0 28px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 20px; margin: 0 0 16px; }
+  section h2 { font-size: 1.05rem; margin: 0 0 8px; display: flex; gap: 10px; align-items: baseline; }
+  .n { color: var(--accent); font-variant-numeric: tabular-nums; font-weight: 700; }
+  p { margin: 0 0 12px; }
+  button { font: inherit; font-weight: 600; border-radius: 7px; padding: 9px 16px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); }
+  button.secondary { background: transparent; color: var(--ink); border-color: var(--line); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  code, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.88em; }
+  code { background: var(--code); padding: 1px 5px; border-radius: 4px; }
+  ul.files { list-style: none; padding: 0; margin: 12px 0 0; }
+  ul.files li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0;
+    border-top: 1px solid var(--line); font-size: 0.92rem; }
+  ul.files li span:last-child { color: var(--muted); text-align: right; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); }
+  .status { min-height: 1.5em; margin-top: 10px; font-size: 0.94rem; }
+  progress { width: 100%; height: 8px; margin-top: 10px; accent-color: var(--accent); }
+  label.choice { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+  details { margin-top: 8px; color: var(--muted); font-size: 0.93rem; }
+  footer { color: var(--muted); font-size: 0.85rem; margin-top: 28px; }
+  footer a, section a { color: inherit; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Spider-Man (2000) in the browser</h1>
+  <p class="lede">Runs the original Windows PC release from your own copy, unchanged. Your files stay on your computer
+    and are never uploaded.</p>
+
+  <section id="support">
+    <h2><span class="n">0</span> Browser check</h2>
+    <ul class="files" id="support-list"></ul>
+  </section>
+
+  <section>
+    <h2><span class="n">1</span> Select your installed game folder</h2>
+    <p>Pick the folder that contains <code>SpideyPC.exe</code>, <code>data.pkr</code> and <code>media.pkr</code>.
+      It's only read, never changed.</p>
+    <div class="row"><button id="pick-source">Choose game folder</button></div>
+    <div class="status" id="source-status"></div>
+    <ul class="files" id="source-files"></ul>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span> Make a browser copy</h2>
+    <p>The browser version needs its own copy of the game folder without the DirectX wrapper DLLs
+      (such as dgVoodoo) that a Windows install often adds, because those would replace the browser's graphics layer.
+      Choose an empty folder for the copy. Saved games are written there.</p>
+    <div class="row">
+      <button id="make-copy" disabled>Choose empty folder and copy</button>
+      <button id="skip-copy" class="secondary">I already have a browser copy</button>
+    </div>
+    <progress id="copy-progress" value="0" max="1" hidden></progress>
+    <div class="status" id="copy-status"></div>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span> Play</h2>
+    <label class="choice"><input type="radio" name="runtime" value="mt" id="rt-mt"> Multi-threaded (faster; needs a page reload on first visit)</label>
+    <label class="choice"><input type="radio" name="runtime" value="st" id="rt-st"> Single-threaded (most compatible)</label>
+    <p style="margin-top:12px">On the next screen, click <strong>Mount d:</strong>, choose your <em>browser copy</em> folder
+      and allow access. The game then starts.</p>
+    <div class="row"><button id="launch" disabled>Launch Spider-Man</button></div>
+    <details>
+      <summary>Advanced launch options</summary>
+      <p style="margin-top:8px">Boxedwine URL that will be opened:</p>
+      <p class="mono" id="launch-url" style="word-break:break-all"></p>
+    </details>
+  </section>
+
+  <footer>
+    Unofficial fan preservation launcher, not affiliated with Activision, Marvel, Neversoft or Treyarch.
+    No game files are hosted here. Runtime: <a href="https://github.com/danoon2/Boxedwine">Boxedwine</a> (GPL-2.0) and Wine (LGPL-2.1).
+    See <a href="LICENSES.md">licenses</a> and <a href="build-info.json">build info</a>.
+  </footer>
+</main>
+<script type="module" src="launcher.js"></script>
+</body>
+</html>

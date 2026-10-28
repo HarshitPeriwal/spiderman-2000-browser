@@ -1,0 +1,13 @@
+# Build outputs
+/build/
+/dist/
+
+# Never commit game data from anyone's copy
+*.pkr
+*.bik
+SpideyPC.exe
+texture.dat
+binkw32.dll
+save/
+*.exe
+*.dll

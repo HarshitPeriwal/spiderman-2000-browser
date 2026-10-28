@@ -1,0 +1,50 @@
+name: Build and deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Emscripten and Boxedwine build
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: runtime-${{ hashFiles('scripts/build-runtime.sh') }}
+
+      - name: Build runtime and assemble site
+        run: bash scripts/build-runtime.sh
+
+      - name: Check file sizes against Pages limits
+        run: |
+          du -sh dist
+          find dist -type f -size +95M -printf '%s %p\n'
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
