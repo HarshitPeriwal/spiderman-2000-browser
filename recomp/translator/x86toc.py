@@ -425,6 +425,8 @@ class FunctionTranslator:
 
     def insn(self, ins):
         m = ins.mnemonic
+        if m.startswith("lock "):   # Capstone 5 folds the prefix into the mnemonic; translate() adds the lock
+            m = m[5:]
         ops = ins.operands
         pre = ins.prefix
         rep = 0xF3 in pre or 0xF2 in pre
@@ -927,6 +929,27 @@ class FunctionTranslator:
             return "c->fpu_cw = 0x037f; c->fpu_sw = 0; c->top = 0; fpu_sync_rounding(c);"
         if m == "ffree":
             return ";"
+        # x87 environment (32-bit protected-mode layout, Intel SDM vol. 1 fig. 8-9): CW, SW, TW, FIP, FCS,
+        # FDP, FDS as dwords (28 bytes); fnsave/frstor append ST(0)..ST(7) as 80-bit values (108 bytes).
+        # Tags aren't modelled: stored as 0 (all valid), ignored on load. Instruction/operand pointers are 0.
+        if m in ("fnstenv", "fstenv", "fnsave", "fsave"):
+            a = self.addr(ins, o[0])
+            s = (f"{{ uint32_t e_ = {a}; W32(e_, 0xffff0000u | c->fpu_cw); "
+                 f"W32(e_ + 4, 0xffff0000u | (uint16_t)((c->fpu_sw & ~0x3800) | ((c->top & 7) << 11))); "
+                 f"W32(e_ + 8, 0xffff0000u); W32(e_ + 12, 0); W32(e_ + 16, 0); W32(e_ + 20, 0); W32(e_ + 24, 0); ")
+            if m in ("fnsave", "fsave"):
+                s += ("for (int i_ = 0; i_ < 8; i_++) WF80(e_ + 28 + 10 * i_, c->st[(c->top + i_) & 7]); "
+                      "c->fpu_cw = 0x037f; c->fpu_sw = 0; c->top = 0; fpu_sync_rounding(c); }")
+            else:
+                s += "c->fpu_cw |= 0x3f; fpu_sync_rounding(c); }"   # fnstenv masks all exceptions
+            return s
+        if m in ("fldenv", "frstor"):
+            a = self.addr(ins, o[0])
+            s = (f"{{ uint32_t e_ = {a}; uint16_t sw_ = R16(e_ + 4); c->fpu_cw = R16(e_); "
+                 f"c->fpu_sw = sw_ & ~0x3800; c->top = (sw_ >> 11) & 7; ")
+            if m == "frstor":
+                s += "for (int i_ = 0; i_ < 8; i_++) c->st[(c->top + i_) & 7] = RF80(e_ + 28 + 10 * i_); "
+            return s + "fpu_sync_rounding(c); }"
         if m == "fincstp":
             return "c->top = (c->top + 1) & 7;"
         if m == "fdecstp":

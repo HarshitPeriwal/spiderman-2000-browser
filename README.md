@@ -16,8 +16,10 @@ supplies their own copy, which stays on their computer.
 |---|---|
 | Version identification of the supplied copy | Done (below) |
 | Choice of approach | Done: emulate the original exe (priority 1 in the brief) |
-| Launcher (`site/`) | Written, syntax-checked, **not yet run in a browser** |
-| Runtime build script and GitHub Pages workflow | Written, **not yet run** |
+| Launcher (`site/`) | Loads in Chrome, all browser checks pass. Folder pick and install not yet run with the real game folder |
+| Runtime build script and GitHub Pages workflow | Builds and deploys (runs 40677629485, 40680459285) |
+| Runtime starts a program from the browser-storage `D:` drive | **Tested 2026-10-28:** Boxedwine's `ski32.exe` sample, written in the launcher's IndexedDB format, ran from `D:` in Chrome (single-threaded JIT, about 70–110 MIPS) |
+| Synthetic key events (gamepad bridge method) reach the Windows program | **Tested:** Left arrow events turned and stopped the SkiFree skier |
 | Game running under Boxedwine WebGL | **Untested.** Boxedwine's Direct3D-to-WebGL support is new (unreleased 26R2) and Spider-Man has not been tried on it |
 | Gameplay equivalence tests against native | **Not started.** Needs the runtime working first |
 
