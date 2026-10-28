@@ -30,7 +30,7 @@
 /* Registration: each host module contributes a table of {"DLL!Name", handler}. */
 #define IMPORT(dll, name) { dll "!" #name, w_##name }
 typedef struct { const ImportHandler *list; uint32_t count; } ImportTable;
-extern const ImportTable kernel32_imports, user32_imports, gdi32_imports, advapi32_imports, winmm_imports,
+extern const ImportTable spidey_imports, ddraw7_imports, kernel32_imports, user32_imports, gdi32_imports, advapi32_imports, winmm_imports,
     directx_imports;
 
 /* Logging of host-side events (RC_LOG=1). */

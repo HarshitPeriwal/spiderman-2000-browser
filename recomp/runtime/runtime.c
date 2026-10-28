@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 
 uint8_t *g_mem;
@@ -291,6 +292,20 @@ static uint32_t rd32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | 
 uint32_t g_image_lo, g_image_hi;
 uint32_t g_state_lo, g_state_hi;
 
+/* Exports of DLLs loaded as guest code (e.g. binkw32.dll): later images' imports bind to these
+   directly instead of to host handlers. */
+typedef struct { char name[96]; uint32_t addr; } GuestExport;
+static GuestExport g_exports[1024];
+static uint32_t g_nexports;
+uint32_t g_dll_ranges[8][2];   /* [lo, hi) of each loaded DLL image: guest_valloc must not use them */
+uint32_t g_ndll_ranges;
+
+static uint32_t find_export(const char *name) {
+    for (uint32_t i = 0; i < g_nexports; i++)
+        if (!strcmp(g_exports[i].name, name)) return g_exports[i].addr;
+    return 0;
+}
+
 int load_image(const char *path, LoadedImage *out) {
     FILE *f = fopen(path, "rb");
     if (!f) { perror(path); return -1; }
@@ -309,6 +324,8 @@ int load_image(const char *path, LoadedImage *out) {
     uint32_t entry = rd32(opt + 16);
     uint32_t hdr_size = rd32(opt + 60);
     uint32_t imp_rva = rd32(opt + 96 + 8);
+    uint32_t exp_rva = rd32(opt + 96);
+    int is_dll = (rd16(pe + 22) & 0x2000) != 0;   /* IMAGE_FILE_DLL */
 
     memcpy(HP(image_base), file, hdr_size);
     const uint8_t *sec = opt + optsz;
@@ -317,7 +334,7 @@ int load_image(const char *path, LoadedImage *out) {
         uint32_t n = rawsz < vsize ? rawsz : vsize;
         memset(HP(image_base + va), 0, vsize);
         memcpy(HP(image_base + va), file + rawptr, n);
-        if (rd32(sec + 36) & 0x80000000u) {   /* IMAGE_SCN_MEM_WRITE */
+        if (!is_dll && (rd32(sec + 36) & 0x80000000u)) {   /* IMAGE_SCN_MEM_WRITE */
             if (!g_state_lo || image_base + va < g_state_lo) g_state_lo = image_base + va;
             if (image_base + va + vsize > g_state_hi) g_state_hi = image_base + va + vsize;
         }
@@ -336,6 +353,11 @@ int load_image(const char *path, LoadedImage *out) {
             else
                 snprintf(s->name, sizeof s->name, "%s!%s", dll, (const char *)HP(image_base + thunk + 2));
             for (char *p = s->name; *p && *p != '!'; p++) *p = (char)toupper((unsigned char)*p);
+            uint32_t exported = find_export(s->name);
+            if (exported) {   /* a guest DLL's function: call its translated code directly */
+                W32(image_base + iat + 4 * k, exported);
+                continue;
+            }
             GuestFn fn = find_handler(s->name);
             s->fn = fn ? fn : unimplemented_import;
             uint32_t magic = IMPORT_BASE + g_nimports * 16;
@@ -344,11 +366,32 @@ int load_image(const char *path, LoadedImage *out) {
             g_nimports++;
         }
     }
+    if (is_dll && exp_rva) {   /* IMAGE_EXPORT_DIRECTORY: Name, NumberOfNames, AddressOfFunctions/Names/NameOrdinals */
+        uint32_t ed = image_base + exp_rva;
+        char dll[64];
+        snprintf(dll, sizeof dll, "%s", (const char *)HP(image_base + R32(ed + 12)));
+        for (char *p = dll; *p; p++) *p = (char)toupper((unsigned char)*p);
+        uint32_t nnames = R32(ed + 24), funcs = image_base + R32(ed + 28), names = image_base + R32(ed + 32),
+                 ords = image_base + R32(ed + 36);
+        for (uint32_t i = 0; i < nnames && g_nexports < 1024; i++) {
+            GuestExport *x = &g_exports[g_nexports++];
+            snprintf(x->name, sizeof x->name, "%s!%s", dll, (const char *)HP(image_base + R32(names + 4 * i)));
+            x->addr = image_base + R32(funcs + 4 * R16(ords + 2 * i));
+        }
+    }
     free(file);
     out->image_base = image_base;
-    g_image_lo = image_base;
-    g_image_hi = image_base + rd32(opt + 56);   /* SizeOfImage */
     out->entry = image_base + entry;
+    out->is_dll = is_dll;
+    if (is_dll) {
+        if (g_ndll_ranges < 8) {
+            g_dll_ranges[g_ndll_ranges][0] = image_base;
+            g_dll_ranges[g_ndll_ranges++][1] = image_base + rd32(opt + 56);
+        }
+    } else {
+        g_image_lo = image_base;
+        g_image_hi = image_base + rd32(opt + 56);   /* SizeOfImage */
+    }
     out->num_imports = g_nimports;
     return 0;
 }

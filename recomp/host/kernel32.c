@@ -633,6 +633,25 @@ W(WaitForSingleObject) {
     RET(2, wait_one(ARG(0), ARG(1)));
 }
 
+static int det_sleep(uint32_t ms);
+
+/* WaitForMultipleObjects(nCount, lpHandles, bWaitAll, dwMilliseconds): WAIT_OBJECT_0 + i, or WAIT_TIMEOUT.
+   Any-object waits poll each handle without blocking, then sleep 1 ms; wait-all waits for each in turn. */
+W(WaitForMultipleObjects) {
+    uint32_t n = ARG(0), hs = ARG(1), all = ARG(2), ms = ARG(3);
+    if (all) {
+        for (uint32_t i = 0; i < n; i++)
+            if (wait_one(R32(hs + 4 * i), ms) == 0x102) RET(4, 0x102);
+        RET(4, 0);
+    }
+    for (uint32_t waited = 0;; waited++) {
+        for (uint32_t i = 0; i < n; i++)
+            if (wait_one(R32(hs + 4 * i), 0) == 0) RET(4, i);
+        if (ms != 0xFFFFFFFFu && waited >= ms) RET(4, 0x102);
+        if (!det_sleep(1)) usleep(1000);
+    }
+}
+
 /* Deterministic mode: a timed block. A zero-length sleep (a yield) also lets RC_DET_YIELD_US (default
    1000) of virtual time pass: Cricket 07's intro-movie player spins on
    SleepEx(0) until the next movie frame is due, and with only the 1 us per clock read that took ~6,600
@@ -1069,7 +1088,7 @@ static const ImportHandler list[] = {
     K(TlsGetValue), K(TlsSetValue), K(InitializeCriticalSection), K(DeleteCriticalSection),
     K(EnterCriticalSection), K(LeaveCriticalSection), K(InterlockedIncrement), K(InterlockedDecrement),
     K(InterlockedExchange), K(CreateEventA), K(SetEvent), K(ResetEvent), K(CreateMutexA), K(ReleaseMutex),
-    K(CreateSemaphoreA), K(ReleaseSemaphore), K(WaitForSingleObject), K(Sleep), K(SleepEx), K(CreateThread),
+    K(CreateSemaphoreA), K(ReleaseSemaphore), K(WaitForSingleObject), K(WaitForMultipleObjects), K(Sleep), K(SleepEx), K(CreateThread),
     K(ResumeThread), K(ExitThread), K(TerminateThread), K(GetExitCodeThread), K(SetThreadPriority),
     K(GetThreadPriority), K(SetThreadAffinityMask), K(DuplicateHandle), K(CloseHandle), K(CreateFileA),
     K(CreateFileW), K(ReadFile), K(WriteFile), K(SetFilePointer), K(GetFileSize), K(FlushFileBuffers),

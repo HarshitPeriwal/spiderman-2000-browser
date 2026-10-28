@@ -475,7 +475,14 @@ class FunctionTranslator:
         a, b = self.read(ins, o[0]), self.read(ins, o[1])
         return f"{{ {UT[s]} t0_ = {a}, t1_ = {b}; {self.write(ins, o[0], 't1_')} {self.write(ins, o[1], 't0_')} }}"
 
+    # Segment registers in the Win32 flat model: CS/DS/ES/SS hold fixed selectors, so pushing one stores
+    # that selector in a 4-byte slot and popping one just discards the slot (e.g. binkw32.dll's MMX check
+    # saves and restores DS/ES around CPUID).
+    SELECTORS = {"cs": 0x1b, "ds": 0x23, "es": 0x23, "ss": 0x23}
+
     def i_push(self, ins, o):
+        if o[0].type == CS_OP_REG and ins.reg_name(o[0].reg) in self.SELECTORS:
+            return f"PUSH32(c, 0x{self.SELECTORS[ins.reg_name(o[0].reg)]:x}u);"
         if o[0].size == 2:
             return f"c->esp -= 2; W16(c->esp, {self.read(ins, o[0])});"
         v = self.read(ins, o[0], 4)
@@ -484,6 +491,8 @@ class FunctionTranslator:
         return f"{{ uint32_t v_ = {v}; PUSH32(c, v_); }}"
 
     def i_pop(self, ins, o):
+        if o[0].type == CS_OP_REG and ins.reg_name(o[0].reg) in ("ds", "es", "ss"):
+            return "c->esp += 4;"
         if o[0].type == CS_OP_MEM:  # address is computed after ESP is incremented
             return f"{{ uint32_t v_ = R32(c->esp); c->esp += 4; {self.write(ins, o[0], 'v_')} }}"
         return f"{{ uint32_t v_ = POP32(c); {self.write(ins, o[0], 'v_')} }}"
@@ -1289,7 +1298,20 @@ class Program:
                 return False
             return len(list(md.disasm(self.code(t, t + 32), t, count=3))) == 3
 
-        cands = {v for v in imms if accept(v)} | cross
+        # An immediate that points at code no function owns is a code pointer too (e.g. binkw32.dll stores
+        # its DirectSound volume callback with `mov [reg+N], offset` and calls it through the struct).
+        cands = {v for v in imms if accept(v) or unowned_code(v)} | cross
+        # Images with base relocations (DLLs) mark every absolute address: a relocated dword that points into
+        # .text is a code pointer or a jump-table entry, whichever instruction holds it.
+        pe.parse_data_directories(directories=[pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_BASERELOC"]])
+        if hasattr(pe, "DIRECTORY_ENTRY_BASERELOC"):
+            for blk in pe.DIRECTORY_ENTRY_BASERELOC:
+                for ent in blk.entries:
+                    if ent.type != 3:   # IMAGE_REL_BASED_HIGHLOW
+                        continue
+                    v = int.from_bytes(self.img[ent.rva:ent.rva + 4], "little")
+                    if tlo <= v < thi and v not in jt and (accept(v) or unowned_code(v)):
+                        cands.add(v)
         for name in (".rdata", ".data"):
             a, b = secs[name]
             for va in range(a, b - 3, 4):
@@ -1375,6 +1397,35 @@ class Program:
         self.entries |= cands
         self.pointer_entries = len(cands)
 
+    def add_call_target_entries(self):
+        """Direct `call` targets that have no entry of their own (local subroutines Ghidra folded into a
+        neighbour's body, e.g. the rounding helper inside the CRT's x87 pow at 0x529955) would otherwise be
+        reached through call_indirect and trap. Decode every function exactly as the translator will,
+        give each such target an entry, and repeat until the set no longer grows (new entries can call
+        further targets)."""
+        lo, hi = self.base + 0x1000, self.base + len(self.img)
+        todo = sorted(self.entries)
+        added = 0
+        while todo:
+            new = set()
+            for e in todo:
+                try:
+                    insns = FunctionTranslator(self, self.functions[e]).decode()
+                except Exception:
+                    continue
+                for ins in insns:
+                    if ins.mnemonic == "call" and ins.operands and ins.operands[0].type == CS_OP_IMM:
+                        t = ins.operands[0].imm & 0xffffffff
+                        if lo <= t < hi and t not in self.entries:
+                            new.add(t)
+            for t in new:
+                self.entries.add(t)
+                self.functions[t] = {"entry": t, "name": f"CALL_{t:08x}", "ranges": [[t, self.next_entry(t)]]}
+            self._sorted_entries = None   # next_entry() caches; recompute with the new entries
+            added += len(new)
+            todo = sorted(new)
+        self.pointer_entries += added
+
     def code(self, a, b):
         return self.img[a - self.base:b - self.base]
 
@@ -1416,17 +1467,21 @@ def main():
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--per-file", type=int, default=400)
     ap.add_argument("--trace", action="store_true", help="call trace_insn() before every instruction")
+    ap.add_argument("--prefix", default="recomp",
+                    help="output file prefix; anything else also names the registration function "
+                         "register_all_functions_<prefix> (for DLLs translated next to the executable)")
     a = ap.parse_args()
 
     prog = Program(a.exe, a.functions_json)
     prog.trace = a.trace
+    prog.add_call_target_entries()
     if a.all:
         chosen = set(prog.entries)
     else:
         chosen = prog.closure([int(x, 16) for x in a.roots.split(",") if x])
     os.makedirs(a.outdir, exist_ok=True)
     for old in os.listdir(a.outdir):  # chunk count can shrink between runs
-        if old.startswith("recomp_") and old.endswith(".c"):
+        if old.startswith(a.prefix + "_") and old.endswith(".c"):
             os.remove(os.path.join(a.outdir, old))
 
     stats = Counter()
@@ -1459,15 +1514,16 @@ def main():
     with open(os.path.join(a.outdir, "recomp.h"), "w") as f:
         f.write("#ifndef RECOMP_H\n#define RECOMP_H\n" + "\n".join(hdr) + "\n#endif\n")
     for i, ch in enumerate(chunks):
-        with open(os.path.join(a.outdir, f"recomp_{i:03d}.c"), "w") as f:
+        with open(os.path.join(a.outdir, f"{a.prefix}_{i:03d}.c"), "w") as f:
             f.write('#include "recomp.h"\n\n' + "\n".join(ch))
     # Functions referenced but not translated get trapping stubs so everything links.
     missing = sorted(prog.entries - chosen)
-    with open(os.path.join(a.outdir, "recomp_stubs.c"), "w") as f:
+    with open(os.path.join(a.outdir, f"{a.prefix}_stubs.c"), "w") as f:
         f.write('#include "recomp.h"\n\n')
         for e in missing:
             f.write(f'void f_{e:08x}(CPU *c) {{ guest_trap(c, 0x{e:08x}u, "function not recompiled"); }}\n')
-        f.write("\nvoid register_all_functions(void) {\n")
+        reg = "register_all_functions" + ("" if a.prefix == "recomp" else "_" + a.prefix)
+        f.write(f"\nvoid {reg}(void) {{\n")
         for e in sorted(prog.entries):
             f.write(f"    register_function(0x{e:08x}u, f_{e:08x});\n")
         f.write("}\n")

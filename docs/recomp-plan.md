@@ -58,7 +58,40 @@ new on WebGPU.
 6. **Launcher.** Copy the player's game folder into the browser's private
    storage (OPFS) once, as Cricket 07 does.
 
-## Status
+## Status (2026-10-28)
 
-Not started. Needs Ghidra 12, Python with `capstone` and `pefile`, and
-Emscripten (already set up in WSL), all run locally on the player's machine.
+**Working:** the translated game boots, plays its intro movies through RAD's
+own translated Bink decoder, and renders in Chrome through WebGPU.
+
+| Stage | State |
+|---|---|
+| Ghidra export | `SpideyPC.exe`: 3,771 functions. `binkw32.dll`: 395 functions |
+| Translation | exe: 7,006 entries, 456,559 instructions. Bink: 787 entries, 68,322 instructions. Every Ghidra-found function translates; the unsupported instructions left are only in pointer/gap entries that decode data as code |
+| Translator fixes (generic, not game-specific) | x87 `fnstenv/fldenv/fnsave/frstor`; `lock`-prefixed `inc/dec` (Capstone 5 mnemonic); segment-register `push/pop` in the flat model; fixpoint discovery of direct-call targets that Ghidra folded into neighbours; immediates and base-relocated dwords pointing at unowned code; `--prefix` for DLLs |
+| Runtime | loads guest DLLs at their own base, binds the exe's imports to their translated exports, keeps DLL ranges out of `VirtualAlloc`, runs `DllMain` |
+| Windows layer, new for Spider-Man | `host/ddraw7.c` (DirectDraw 7 + Direct3D 7 on the shared WebGPU renderer); `host/spidey.c` (GetVersion, MessageBeep, WinMM mmio + MCI, Bink's kernel32/user32/gdi32/waveOut imports); DirectInput 8 and DirectSound 8 interfaces added to the shared `dinput.c`/`dsound.c`; `WaitForMultipleObjects` |
+| Headless Node run | boots through CRT, WinMain, window, DirectDraw (640×480×16 exclusive, flip chain, 16-bit z-buffer chosen by the game), DirectSound (44.1 kHz), DirectInput 8 (keyboard, mouse, gamepad with the game's own −1000…1000 range), PKR archives, texture uploads, the Bink intros (Bink's DirectSound stream and worker threads), then holds 60 fps at one draw per frame (title screen, waiting for input). No traps in 150 s |
+| Browser (Chrome, WebGPU) | game files in OPFS, intro movie frames rendered. Speed not measured: the automation window used for testing limits every page to about 8 `requestAnimationFrame` ticks per second, and the renderer replays one frame per tick |
+
+**Not verified yet:** gameplay past the title screen, 3D rendering of levels
+(render states, fog, alpha, color keys), sound output in the browser, saves,
+real gamepad hardware, browser frame rate in a normal window, and the
+function-by-function equivalence tests (need a native C toolchain:
+`sudo apt install build-essential` in WSL).
+
+## Building (track B)
+
+Inside WSL, with Emscripten 6.0.13 (`~/tools/emsdk`) and the game files from
+your own copy:
+
+```sh
+# once per game version: Ghidra exports (Windows, see ghidra/export.sh), then translate
+python3 build.py translate     "<game>/SpideyPC.exe" work/spidey/functions.json
+python3 build.py translate-dll "<game>/binkw32.dll"  work/bink/functions.json bink
+bash run_node.sh "<game folder>" 120     # headless test run, log in ~/spidey-build/run.log
+python3 build.py web                     # ~/spidey-build/www/recomp.{js,wasm}
+```
+
+Serve `recomp/web/` with `build/` pointing at that output, using cross-origin
+isolation headers (`web/serve.py`), then open it in Chrome or Edge on
+`localhost`. `work/` and every build output stay local and are git-ignored.

@@ -381,14 +381,18 @@ W(ds_GetSpeakerConfig) { W32(ARG(1), 4 /* stereo */); RET(2, S_OK); }
 W(ds_SetSpeakerConfig) { RET(2, S_OK); }
 W(ds_Initialize) { RET(2, S_OK); }
 
+/* IDirectSound8::VerifyCertification(pdwCertified): DS_UNCERTIFIED (0) */
+static void ds_VerifyCertification(CPU *c) { if (ARG(1)) W32(ARG(1), 0); RET(2, S_OK); }
+
 static const ComMethod ds_methods[] = {
     { "QueryInterface", 2, com_QueryInterface }, { "AddRef", 0, com_AddRef }, { "Release", 0, com_Release },
     { "CreateSoundBuffer", 3, ds_CreateSoundBuffer }, { "GetCaps", 1, ds_GetCaps },
     { "DuplicateSoundBuffer", 2, ds_DuplicateSoundBuffer }, { "SetCooperativeLevel", 2, ds_SetCooperativeLevel },
     { "Compact", 0, ds_Compact }, { "GetSpeakerConfig", 1, ds_GetSpeakerConfig },
     { "SetSpeakerConfig", 1, ds_SetSpeakerConfig }, { "Initialize", 1, ds_Initialize },
+    { "VerifyCertification", 1, ds_VerifyCertification },   /* IDirectSound8 */
 };
-static ComInterface IDirectSound_i = { "IDirectSound", ds_methods, 11, 0 };
+static ComInterface IDirectSound_i = { "IDirectSound", ds_methods, 12, 0 };
 
 void w_DirectSoundCreate(CPU *c) {
     LOG("[dsound] DirectSoundCreate\n");

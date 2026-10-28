@@ -108,7 +108,14 @@ void dinput_mouse_move(int dx, int dy) {
     if (dy) push(2, 4, (uint32_t)dy);
 }
 
-static ComInterface IDirectInputDevice_i;
+static ComInterface IDirectInputDevice_i, IDirectInputDevice8_i;
+
+/* DirectInput 8 reports DI8DEVTYPE_* codes: keyboard 0x13 (subtype PCENH 4), mouse 0x12 (subtype
+   TRADITIONAL 2), gamepad 0x15 (subtype STANDARD 2) | DIDEVTYPE_HID. Set by DirectInput8Create. */
+static int g_di8;
+#define DT_KEYBOARD (g_di8 ? 0x0413u : 0x0403u)
+#define DT_MOUSE    (g_di8 ? 0x0212u : 0x0202u)
+#define DT_PAD      (g_di8 ? 0x10215u : PAD_DEVTYPE)
 
 /* ------------------------------------------------------------------ joystick objects */
 
@@ -364,7 +371,7 @@ W(dev_GetDeviceInfo) {
     if (d && d->kind == DEV_JOYSTICK) {
         pad_guid(HP(p + 4), 1, d->pad);
         pad_guid(HP(p + 20), 0, d->pad);
-        W32(p + 36, PAD_DEVTYPE);
+        W32(p + 36, DT_PAD);
         strcpy((char *)HP(p + 40), PAD_NAME);
         strcpy((char *)HP(p + 300), PAD_NAME);
         if (sz >= 580) { W16(p + 576, 1); W16(p + 578, 5); }   /* HID usage page 1, usage 5 = game pad */
@@ -373,7 +380,7 @@ W(dev_GetDeviceInfo) {
     int kb = d && d->kind == DEV_KEYBOARD;
     memcpy(HP(p + 4), kb ? GUID_SysKeyboard : GUID_SysMouse, 16);
     memcpy(HP(p + 20), kb ? GUID_SysKeyboard : GUID_SysMouse, 16);
-    W32(p + 36, kb ? 0x0403 : 0x0202);
+    W32(p + 36, kb ? DT_KEYBOARD : DT_MOUSE);
     strcpy((char *)HP(p + 40), kb ? "Keyboard" : "Mouse");
     strcpy((char *)HP(p + 300), kb ? "Keyboard" : "Mouse");
     RET(2, S_OK);
@@ -407,6 +414,13 @@ static const ComMethod didev_methods[] = {
 };
 static ComInterface IDirectInputDevice_i = { "IDirectInputDeviceA", didev_methods, 29, 0 };
 
+/* IDirectInputDevice8A: the same 29 methods, then the action-mapping ones (unused: DIERR_UNSUPPORTED) */
+W(dev_BuildActionMap) { RET(4, DIERR_UNSUPPORTED); }
+W(dev_SetActionMap) { RET(4, DIERR_UNSUPPORTED); }
+W(dev_GetImageInfo) { RET(2, DIERR_UNSUPPORTED); }
+static ComMethod didev8_methods[32];
+static ComInterface IDirectInputDevice8_i = { "IDirectInputDevice8A", didev8_methods, 32, 0 };
+
 /* ------------------------------------------------------------------ IDirectInput */
 
 static uint32_t create_device(const uint8_t *guid) {
@@ -421,7 +435,7 @@ static uint32_t create_device(const uint8_t *guid) {
     if (!d->kind) { free(d); return 0; }
     if (pad >= 0) LOG("[dinput] CreateDevice(gamepad %d)\n", pad);
     else LOG("[dinput] CreateDevice(%s)\n", d->kind == DEV_KEYBOARD ? "keyboard" : "mouse");
-    return com_new(&IDirectInputDevice_i, 0, d);
+    return com_new(g_di8 ? &IDirectInputDevice8_i : &IDirectInputDevice_i, 0, d);
 }
 
 W(di_CreateDevice) {
@@ -445,7 +459,7 @@ static int enum_one(CPU *c, uint32_t cb, uint32_t ref, const uint8_t *guid, cons
     W32(p + 36, type);
     strcpy((char *)HP(p + 40), name);
     strcpy((char *)HP(p + 300), name);
-    if (type == PAD_DEVTYPE) { W16(p + 576, 1); W16(p + 578, 5); }
+    if (type == DT_PAD) { W16(p + 576, 1); W16(p + 578, 5); }
     uint32_t a[2] = { p, ref };
     uint32_t r = guest_stdcall(c, cb, 2, a);
     heap_free(p);
@@ -456,14 +470,14 @@ W(di_EnumDevices) {
     LOG("[dinput] EnumDevices(type %u)\n", type);
     /* same order as Windows: system mouse first, then keyboard (the game's controller slots follow it) */
     uint32_t flags = ARG(4);
-    if ((type == 0 || type == 2) && !enum_one(c, cb, ref, GUID_SysMouse, GUID_SysMouse, 0x0202, "Mouse")) RET(5, S_OK);
-    if ((type == 0 || type == 3) && !enum_one(c, cb, ref, GUID_SysKeyboard, GUID_SysKeyboard, 0x0403, "Keyboard")) RET(5, S_OK);
+    if ((type == 0 || type == 2) && !enum_one(c, cb, ref, GUID_SysMouse, GUID_SysMouse, DT_MOUSE, "Mouse")) RET(5, S_OK);
+    if ((type == 0 || type == 3) && !enum_one(c, cb, ref, GUID_SysKeyboard, GUID_SysKeyboard, DT_KEYBOARD, "Keyboard")) RET(5, S_OK);
     if ((type == 0 || type == 4) && !(flags & 0x100 /* DIEDFL_FORCEFEEDBACK */))
         for (int i = 0; i < num_pads(); i++) {
             uint8_t inst[16], prod[16];
             pad_guid(inst, 1, i);
             pad_guid(prod, 0, i);
-            if (!enum_one(c, cb, ref, inst, prod, PAD_DEVTYPE, PAD_NAME)) break;
+            if (!enum_one(c, cb, ref, inst, prod, DT_PAD, PAD_NAME)) break;
         }
     RET(5, S_OK);
 }
@@ -479,6 +493,29 @@ static const ComMethod di_methods[] = {
     { "Initialize", 2, di_Initialize }, { "FindDevice", 3, di_FindDevice }, { "CreateDeviceEx", 4, di_CreateDeviceEx },
 };
 static ComInterface IDirectInput_i = { "IDirectInputA", di_methods, 10, 0 };
+
+/* IDirectInput8A: the first 9 methods as before, then EnumDevicesBySemantics and ConfigureDevices */
+W(di_EnumDevicesBySemantics) { RET(6, S_OK); }
+W(di_ConfigureDevices) { RET(5, DIERR_UNSUPPORTED); }
+static ComMethod di8_methods[11];
+static ComInterface IDirectInput8_i = { "IDirectInput8A", di8_methods, 11, 0 };
+
+/* DirectInput8Create(hinst, dwVersion, riidltf, ppvOut, punkOuter) */
+void w_DirectInput8Create(CPU *c) {
+    LOG("[dinput] DirectInput8Create(version %x)\n", ARG(1));
+    if (!di8_methods[0].name) {
+        memcpy(di8_methods, di_methods, 9 * sizeof di_methods[0]);
+        di8_methods[9] = (ComMethod){ "EnumDevicesBySemantics", 5, di_EnumDevicesBySemantics };
+        di8_methods[10] = (ComMethod){ "ConfigureDevices", 4, di_ConfigureDevices };
+        memcpy(didev8_methods, didev_methods, 29 * sizeof didev_methods[0]);
+        didev8_methods[29] = (ComMethod){ "BuildActionMap", 3, dev_BuildActionMap };
+        didev8_methods[30] = (ComMethod){ "SetActionMap", 3, dev_SetActionMap };
+        didev8_methods[31] = (ComMethod){ "GetImageInfo", 1, dev_GetImageInfo };
+    }
+    g_di8 = 1;
+    W32(ARG(3), com_new(&IDirectInput8_i, 0, NULL));
+    RET(5, S_OK);
+}
 
 void w_DirectInputCreateA(CPU *c) {
     LOG("[dinput] DirectInputCreateA(version %x)\n", ARG(1));

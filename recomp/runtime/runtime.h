@@ -31,7 +31,8 @@ extern char g_trap_msg[256];
 #define GUEST_RETURN_SENTINEL  0xDEADBEEFu
 
 typedef struct { const char *name; GuestFn fn; } ImportHandler;  /* name like "KERNEL32.DLL!GetTickCount" */
-typedef struct { uint32_t image_base, entry, num_imports; } LoadedImage;
+typedef struct { uint32_t image_base, entry, num_imports; int is_dll; } LoadedImage;
+extern uint32_t g_dll_ranges[8][2], g_ndll_ranges;   /* loaded DLL images, kept out of guest_valloc */
 extern uint32_t g_image_lo, g_image_hi;   /* the loaded executable's address range */
 extern uint32_t g_state_lo, g_state_hi;   /* its writable sections (global data): what determinism checks hash */
 

@@ -97,7 +97,10 @@ uint32_t guest_valloc(uint32_t size) {
     size = (size + 0xffff) & ~0xffffu;  /* Windows allocation granularity */
     pthread_mutex_lock(&g_heap_lock);
     uint32_t a = g_valloc_top;
+    for (uint32_t i = 0; i < g_ndll_ranges; i++)   /* step over DLL images loaded at their own base */
+        if (a < g_dll_ranges[i][1] && a + size > g_dll_ranges[i][0]) a = (g_dll_ranges[i][1] + 0xffff) & ~0xffffu;
     if (a + size > VALLOC_HI) { pthread_mutex_unlock(&g_heap_lock); return 0; }
+    g_valloc_top = a;
     g_valloc_top += size;
     pthread_mutex_unlock(&g_heap_lock);
     return a;  /* never handed out before, so still zero */

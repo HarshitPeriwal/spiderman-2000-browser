@@ -21,6 +21,14 @@
 static LoadedImage g_img;
 static CPU g_cpu;
 
+/* DLLs that ship with the game and run as translated guest code (build.py translates them next to the
+   executable). Each is optional: without its translated code it isn't loaded, and its imports stay
+   host stubs. */
+void register_all_functions_bink(void) __attribute__((weak));
+static struct { const char *file; void (*reg)(void); LoadedImage img; int loaded; } g_dlls[] = {
+    { "binkw32.dll", NULL },
+};
+
 /* RC_WATCHDOG=secs: periodically print the game thread's guest call stack (return addresses found
    on its stack), to see where it is when it seems stuck. */
 static void *watchdog(void *arg) {
@@ -56,6 +64,15 @@ static void *game_main(void *arg) {
     sched_main_init();
     t_self->cpu = *c;            /* keep the thread record consistent with the main CPU */
     fpu_sync_rounding(c);
+    /* DllMain(hinstDLL, DLL_PROCESS_ATTACH, NULL) for each guest DLL, as the Windows loader does */
+    for (size_t i = 0; i < sizeof g_dlls / sizeof g_dlls[0]; i++) {
+        if (!g_dlls[i].loaded) continue;
+        GuestFn dll_main = lookup_function(g_dlls[i].img.entry);
+        if (!dll_main) { fprintf(stderr, "%s: entry point %08x was not recompiled\n", g_dlls[i].file, g_dlls[i].img.entry); exit(1); }
+        uint32_t args[3] = { g_dlls[i].img.image_base, 1, 0 };
+        guest_call(c, dll_main, 3, args);
+        fprintf(stderr, "%s: DllMain returned %u\n", g_dlls[i].file, c->eax);
+    }
     GuestFn entry = lookup_function(g_img.entry);
     if (!entry) { fprintf(stderr, "entry point %08x was not recompiled\n", g_img.entry); exit(1); }
     fprintf(stderr, "starting game at %08x\n", g_img.entry);
@@ -86,7 +103,7 @@ int main(int argc, char **argv) {
 
     static ImportHandler all[1024];
     uint32_t n = 0;
-    const ImportTable *tables[] = { &kernel32_imports, &user32_imports, &gdi32_imports, &advapi32_imports,
+    const ImportTable *tables[] = { &spidey_imports, &ddraw7_imports, &kernel32_imports, &user32_imports, &gdi32_imports, &advapi32_imports,
                                     &winmm_imports, &directx_imports };
     for (size_t t = 0; t < sizeof tables / sizeof tables[0]; t++)
         for (uint32_t i = 0; i < tables[t]->count; i++) all[n++] = tables[t]->list[i];
@@ -94,6 +111,16 @@ int main(int argc, char **argv) {
 
     runtime_init(&g_cpu);
     vclock_init();
+    g_dlls[0].reg = register_all_functions_bink;
+    for (size_t i = 0; i < sizeof g_dlls / sizeof g_dlls[0]; i++) {
+        if (!g_dlls[i].reg) continue;
+        char dll[1100];
+        snprintf(dll, sizeof dll, "%s/%s", g_game_root, g_dlls[i].file);
+        if (load_image(dll, &g_dlls[i].img)) return 1;
+        g_dlls[i].reg();
+        g_dlls[i].loaded = 1;
+        fprintf(stderr, "loaded %s at %08x as guest code\n", dll, g_dlls[i].img.image_base);
+    }
     char exe[1100];
     snprintf(exe, sizeof exe, "%s/%s", g_game_root, getenv("RC_EXE") ? getenv("RC_EXE") : PROFILE_EXE);
     if (load_image(exe, &g_img)) return 1;
