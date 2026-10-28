@@ -308,6 +308,9 @@ void rdtsc(CPU *c);
 extern int g_preempt_on;
 void guest_preempt(CPU *c);
 #define PREEMPT_QUANTUM 100000u
+/* Start of every translated loop: guest memory may have been changed by another thread since the last
+   iteration (x86 loads always see it), so the compiler must not keep loaded values across the back edge. */
+#define GUEST_LOOP_BARRIER() __asm__ __volatile__("" ::: "memory")
 #define PREEMPT_POLL(c) do { if (__builtin_expect(g_preempt_on, 0) && ++(c)->preempt_ticks >= PREEMPT_QUANTUM) guest_preempt(c); } while (0)
 
 /* ------------------------------------------------------------------ dispatch */

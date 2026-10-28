@@ -552,15 +552,5 @@ function setupOnline() {
 // L1, R1), so keyboard players need a reference. The CSS (index.html) reserves the panel's space on
 // viewports wide enough and shrinks the stage to match; the body's .kbd-off class (set when the player
 // dismisses the panel, remembered in localStorage) hides the panel and lets the stage reclaim the space.
-function setupKbdHelp() {
-  const off = () => { try { return localStorage.getItem('rc-kbd') === 'hide'; } catch { return false; } };
-  const save = (v) => { try { localStorage.setItem('rc-kbd', v); } catch { /* storage blocked */ } };
-  const apply = () => document.body.classList.toggle('kbd-off', off());
-  $('kbd-close').onclick = () => { save('hide'); apply(); };
-  $('kbd-show').onclick = () => { save('show'); apply(); };
-  apply();
-}
-
 setupFullscreen();
-setupKbdHelp();
 boot();

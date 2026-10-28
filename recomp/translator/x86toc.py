@@ -232,6 +232,10 @@ class FunctionTranslator:
         self.entry = func["entry"]
         self.out = []
         self.labels = set()
+        # Targets of backward branches. Each gets a compiler memory barrier, so a loop re-reads guest memory
+        # on every iteration as x86 does: otherwise a spin-wait on a value another thread writes (Spider-Man's
+        # Pause(), `while (Vblanks < Until);`, advanced by the WinMM timer thread) is hoisted into one load.
+        self.loop_heads = set()
 
     # ------------------------------------------------------------ operands
 
@@ -308,6 +312,8 @@ class FunctionTranslator:
         """Branch to an address: goto inside this function, otherwise a tail call."""
         if target in self.insn_addrs:
             self.labels.add(target)
+            if target <= self.cur:
+                self.loop_heads.add(target)
             return f"goto L_{target:08x};"
         if target in self.p.entries:
             return f"{{ f_{target:08x}(c); return; }}"
@@ -411,7 +417,7 @@ class FunctionTranslator:
         for (ins, _), stmt in zip(body, texts):
             if ins is not None:
                 if ins.address in self.labels:
-                    lines.append(f"L_{ins.address:08x}:;")
+                    lines.append(f"L_{ins.address:08x}:;" + (" GUEST_LOOP_BARRIER();" if ins.address in self.loop_heads else ""))
                 lines.append(f"    {stmt} /* {ins.mnemonic} {ins.op_str} */")
             else:
                 lines.append(f"    {stmt}")

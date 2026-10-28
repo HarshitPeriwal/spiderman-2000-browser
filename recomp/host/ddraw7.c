@@ -406,6 +406,9 @@ static void present(void) {
     }
     d->frame++;
     d->draws_this_frame = 0;
+    extern void input_script_tick(uint32_t frame), dump_tick(uint32_t frame);
+    input_script_tick(d->frame);   /* RC_INPUT scripted test input, RC_DUMP memory dumps */
+    dump_tick(d->frame);
 }
 
 /* CPU access to a render target: fetch what the GPU drew first, push the CPU's pixels back after */
