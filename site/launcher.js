@@ -143,24 +143,15 @@ function checkSupport() {
 
 // --- Reading the install folder ---------------------------------------------------
 
-async function walkHandle(dir, prefix, out) {
-  for await (const [name, handle] of dir.entries()) {
-    if (handle.kind === "directory") {
-      out.push({ path: prefix + name, dir: true });
-      await walkHandle(handle, prefix + name + "/", out);
-    } else {
-      out.push({ path: prefix + name, getFile: () => handle.getFile() });
-    }
-  }
-  return out;
-}
-
+// The folder is read through <input webkitdirectory>, not showDirectoryPicker():
+// Chrome's File System Access API leaves .dll files out of directory listings,
+// which hid binkw32.dll. The folder input lists every file.
 function fromFileList(files) {
   // webkitRelativePath is "<picked folder>/<path inside it>"
   const out = [];
   const dirs = new Set();
   for (const f of files) {
-    const rel = f.webkitRelativePath.split("/").slice(1);
+    const rel = f.webkitRelativePath ? f.webkitRelativePath.split("/").slice(1) : [f.name];
     for (let i = 1; i < rel.length; i++) dirs.add(rel.slice(0, i).join("/"));
     out.push({ path: rel.join("/"), getFile: async () => f });
   }
@@ -238,27 +229,26 @@ async function checkSource(entries) {
     if (nested.length) hint += " binkw32.dll is in a subfolder (" + nested[0].path + "); pick the folder that holds SpideyPC.exe.";
     setStatus(status, "This doesn't look like a complete Spider-Man PC install." + hint, "bad");
     source = null;
+    $("add-file").hidden = !(top.has("spideypc.exe") && !top.has("binkw32.dll"));
   } else {
     setStatus(status, "Found a complete install. Your folder is only read, never changed.", "ok");
     source = entries;
+    $("add-file").hidden = true;
   }
   $("install").disabled = !source;
 }
 
-async function pickSource() {
-  if (typeof window.showDirectoryPicker === "function") {
-    let dir;
-    try {
-      dir = await window.showDirectoryPicker({ id: "spiderman-source", mode: "read" });
-    } catch (e) {
-      if (e.name !== "AbortError") setStatus($("source-status"), "Couldn't open the folder: " + e.message, "bad");
-      return;
-    }
-    setStatus($("source-status"), "Reading folder...");
-    await checkSource(await walkHandle(dir, "", []));
-  } else {
-    $("folder-input").click();   // Firefox / Safari
-  }
+let picked = [];   // entries from the folder input, plus any single files added after
+
+function pickSource() {
+  $("folder-input").click();
+}
+
+// Backup for a browser that still leaves binkw32.dll out of the folder listing.
+async function addSingleFile(file) {
+  picked = picked.filter((e) => e.path.toLowerCase() !== file.name.toLowerCase());
+  picked.push({ path: file.name, getFile: async () => file });
+  await checkSource(picked);
 }
 
 // --- Install into browser storage --------------------------------------------------
@@ -365,7 +355,15 @@ updateLaunchUrl();
 
 $("pick-source").addEventListener("click", pickSource);
 $("folder-input").addEventListener("change", async (e) => {
-  if (e.target.files.length) await checkSource(fromFileList(e.target.files));
+  if (!e.target.files.length) return;
+  setStatus($("source-status"), "Reading folder...");
+  picked = fromFileList(e.target.files);
+  await checkSource(picked);
+});
+$("add-file").addEventListener("click", () => $("file-input").click());
+$("file-input").addEventListener("change", async (e) => {
+  if (e.target.files.length) await addSingleFile(e.target.files[0]);
+  e.target.value = "";
 });
 $("install").addEventListener("click", install);
 $("launch").addEventListener("click", () => { location.href = launchUrl(); });

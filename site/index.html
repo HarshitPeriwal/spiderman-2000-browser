@@ -70,8 +70,14 @@
     <h2><span class="n">1</span> Select your installed game folder</h2>
     <p>Pick the folder that contains <code>SpideyPC.exe</code>, <code>binkw32.dll</code>, <code>data.pkr</code>
       and <code>media.pkr</code>. It's only read, never changed.</p>
-    <div class="row"><button id="pick-source">Choose game folder</button></div>
+    <p>Your browser may ask whether to "upload" the files. Nothing is sent anywhere: the files are only read by this page,
+      on your computer.</p>
+    <div class="row">
+      <button id="pick-source">Choose game folder</button>
+      <button id="add-file" class="secondary" hidden>Add binkw32.dll</button>
+    </div>
     <input type="file" id="folder-input" webkitdirectory multiple hidden>
+    <input type="file" id="file-input" accept=".dll" hidden>
     <div class="status" id="source-status"></div>
     <ul class="files" id="source-files"></ul>
   </section>
