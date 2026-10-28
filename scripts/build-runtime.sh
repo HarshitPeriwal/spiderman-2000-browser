@@ -60,6 +60,16 @@ if [ "$(git -C "$SRC" rev-parse HEAD 2>/dev/null || true)" != "$BOXEDWINE_COMMIT
     git -C "$SRC" checkout -q --force "$BOXEDWINE_COMMIT"
 fi
 
+# The JIT targets replace the makefile's EXPORTED_RUNTIME_METHODS with their
+# own list, which drops IDBFS. The shell then fails with "IDBFS is not defined"
+# as soon as it mounts browser storage, which it does by default for Wine's C:.
+# Export it again. (Upstream issue at the pinned commit.)
+MK="$SRC/project/emscripten/makefile"
+if ! grep -q '^JIT_CCALL_EXPORTS := ,ccall,IDBFS' "$MK"; then
+    sed -i 's/^JIT_CCALL_EXPORTS := ,ccall$/JIT_CCALL_EXPORTS := ,ccall,IDBFS/' "$MK"
+    grep -q '^JIT_CCALL_EXPORTS := ,ccall,IDBFS' "$MK" || { echo "error: could not add IDBFS export to $MK" >&2; exit 1; }
+fi
+
 # --- Build each runtime ------------------------------------------------------
 for target in $TARGETS; do
     dir=${TARGET_DIR[$target]:?unknown target $target}

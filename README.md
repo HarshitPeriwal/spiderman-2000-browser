@@ -71,12 +71,21 @@ All facts come from the files in the install folder. REA Evidence IDs refer to
 1. `site/index.html` checks the browser, reads the player's install folder
    (read-only), identifies the build from its PE header and checks the PKR3
    archives.
-2. It copies the game into a new folder the player picks, leaving out
-   DirectX wrapper DLLs and installer files. Wine loads DLLs from the game
-   folder before system32, so dgVoodoo's `DDraw.dll` would replace the WebGL one.
+2. It installs the game once into the browser's IndexedDB: the database that
+   Boxedwine mounts as `D:` (`/d_drive/key/spiderman2000`, Emscripten IDBFS
+   format), leaving out DirectX wrapper DLLs and installer files. Wine loads
+   DLLs from the game folder before system32, so dgVoodoo's `DDraw.dll` would
+   replace the WebGL one. Nothing is written to the player's disk. An earlier
+   version copied to a second folder through the File System Access API, and
+   Chrome's Safe Browsing checks on `.dll` writes could drop `binkw32.dll`.
 3. It opens Boxedwine with
-   `root=TinyCore15Wine11.0-web&storage=hostfolder&p=SpideyPC.exe&w=d:/&sound=true`.
-   The player mounts the copy as `D:`, read-write, so saves persist there.
+   `root=TinyCore15Wine11.0-web&storage=indexeddb&storageKey=spiderman2000&p=SpideyPC.exe&w=d:/&sound=true`.
+   Saves land in the game's `save\` folder inside that storage. Later visits
+   skip steps 1 and 2.
+
+The build adds `IDBFS` back to the JIT targets' exported runtime methods.
+Without it, the pinned Boxedwine commit fails at startup with "IDBFS is not
+defined" (found in testing on 2026-10-28).
 
 ## 4. Building and running locally
 

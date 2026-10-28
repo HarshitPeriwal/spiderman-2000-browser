@@ -68,32 +68,33 @@
 
   <section>
     <h2><span class="n">1</span> Select your installed game folder</h2>
-    <p>Pick the folder that contains <code>SpideyPC.exe</code>, <code>data.pkr</code> and <code>media.pkr</code>.
-      It's only read, never changed.</p>
+    <p>Pick the folder that contains <code>SpideyPC.exe</code>, <code>binkw32.dll</code>, <code>data.pkr</code>
+      and <code>media.pkr</code>. It's only read, never changed.</p>
     <div class="row"><button id="pick-source">Choose game folder</button></div>
+    <input type="file" id="folder-input" webkitdirectory multiple hidden>
     <div class="status" id="source-status"></div>
     <ul class="files" id="source-files"></ul>
   </section>
 
   <section>
-    <h2><span class="n">2</span> Make a browser copy</h2>
-    <p>The browser version needs its own copy of the game folder without the DirectX wrapper DLLs
-      (such as dgVoodoo) that a Windows install often adds, because those would replace the browser's graphics layer.
-      Choose an empty folder for the copy. Saved games are written there.</p>
+    <h2><span class="n">2</span> Install into this browser</h2>
+    <p>The game files are copied once into this browser's private storage (about 460 MB) and stay there, so later
+      visits start straight away. They never leave your computer. DirectX wrapper DLLs such as dgVoodoo are left out,
+      because they would replace the browser's graphics layer. Saved games are kept in the same storage.</p>
     <div class="row">
-      <button id="make-copy" disabled>Choose empty folder and copy</button>
-      <button id="skip-copy" class="secondary">I already have a browser copy</button>
+      <button id="install" disabled>Install</button>
+      <button id="remove" class="secondary" hidden>Remove from this browser</button>
     </div>
-    <progress id="copy-progress" value="0" max="1" hidden></progress>
-    <div class="status" id="copy-status"></div>
+    <progress id="install-progress" value="0" max="1" hidden></progress>
+    <div class="status" id="install-status"></div>
   </section>
 
   <section>
     <h2><span class="n">3</span> Play</h2>
     <label class="choice"><input type="radio" name="runtime" value="mt" id="rt-mt"> Multi-threaded (faster; needs a page reload on first visit)</label>
     <label class="choice"><input type="radio" name="runtime" value="st" id="rt-st"> Single-threaded (most compatible)</label>
-    <p style="margin-top:12px">On the next screen, click <strong>Mount d:</strong>, choose your <em>browser copy</em> folder
-      and allow access. The game then starts.</p>
+    <p style="margin-top:12px">The game starts on the next screen. Click it once to enable sound.
+      A controller works too: press any button after the game starts.</p>
     <div class="row"><button id="launch" disabled>Launch Spider-Man</button></div>
     <details>
       <summary>Advanced launch options</summary>

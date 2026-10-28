@@ -11,3 +11,13 @@ binkw32.dll
 save/
 *.exe
 *.dll
+
+# Track B: everything generated from the player's game files stays local
+recomp/work/
+recomp/out*/
+recomp/build*/
+*.gpr
+*.rep/
+functions.json
+*.csv
+__pycache__/
